@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editor IA</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1e1e1e; color: white; padding: 20px; }
+        .upload-box { border: 2px dashed #555; padding: 20px; text-align: center; margin-bottom: 20px; border-radius: 10px;}
+        #timeline { display: flex; overflow-x: auto; height: 100px; background: #2d2d2d; border-radius: 5px; margin-top: 20px; padding: 10px; align-items: center; gap: 2px;}
+        .clip { height: 80px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: black; font-weight: bold; cursor: pointer; min-width: 30px; }
+        .good { background-color: #4CAF50; } /* Verde para clips buenos */
+        .silence { background-color: #F44336; opacity: 0.7; } /* Rojo para silencios */
+        .filler { background-color: #FFC107; } /* Amarillo para muletillas */
+    </style>
+</head>
+<body>
+
+    <h1>🎬 Mi Editor de Video con IA</h1>
+    
+    <div class="upload-box">
+        <input type="file" id="videoInput" accept="video/mp4,video/mov">
+        <button onclick="procesarVideo()" style="padding: 10px; cursor: pointer;">Generar Línea de Tiempo Mágica</button>
+        <p id="status">Sube un video para comenzar...</p>
+    </div>
+
+    <h3>Línea de Tiempo Editable:</h3>
+    <div id="timeline">
+        <!-- Aquí se dibujarán los bloques generados por la IA -->
+    </div>
+
+    <script>
+        async function procesarVideo() {
+            const file = document.getElementById('videoInput').files[0];
+            if (!file) return alert("Selecciona un video primero");
+
+            document.getElementById('status').innerText = "Procesando con IA (Esto puede tardar unos segundos)...";
+            document.getElementById('timeline').innerHTML = "";
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                // Llamamos a tu API que ya construimos
+                const response = await fetch("/upload-and-extract/", { method: "POST", body: formData });
+                const data = await response.json();
+
+                if (data.status === "success") {
+                    document.getElementById('status').innerText = "¡Proceso terminado! Revisa los cortes sugeridos.";
+                    dibujarTimeline(data.timeline);
+                } else {
+                    document.getElementById('status').innerText = "Error procesando.";
+                }
+            } catch (e) {
+                document.getElementById('status').innerText = "Error de conexión.";
+            }
+        }
+
+        function dibujarTimeline(timelineData) {
+            const container = document.getElementById('timeline');
+            
+            // Unimos clips hablados y silencios en un solo arreglo para ordenarlos por tiempo
+            let todosLosClips = [...timelineData.spoken_segments, ...timelineData.cuts_to_make];
+            todosLosClips.sort((a, b) => a.start - b.start);
+
+            todosLosClips.forEach(clip => {
+                const div = document.createElement('div');
+                div.className = 'clip';
+                
+                // Calculamos el ancho del bloque basado en la duración (1 segundo = 20px)
+                const duration = clip.end - clip.start;
+                div.style.width = (duration * 20) + 'px';
+
+                // Asignamos colores según lo que detectó la IA
+                if (clip.type === "silence_cut") {
+                    div.classList.add('silence');
+                    div.title = "Silencio a eliminar";
+                } else if (clip.flag_filler) {
+                    div.classList.add('filler');
+                    div.title = "Muletilla detectada: " + clip.text;
+                } else {
+                    div.classList.add('good');
+                    div.title = clip.text;
+                }
+
+                container.appendChild(div);
+            });
+        }
+    </script>
+</body>
+</html>
