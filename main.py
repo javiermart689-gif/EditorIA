@@ -51,25 +51,45 @@ async def process_video(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en IA de Groq: {str(e)}")
 
-    # 4. Formatear la línea de tiempo
+   # 4. Formatear la línea de tiempo y detectar silencios
     timeline_segments = []
+    silences = []
     
-    # Groq devuelve los segmentos directamente si pedimos verbose_json
+    # Umbral: ¿Cuántos segundos de silencio consideramos aburridos para cortar? (ej. 0.8 segundos)
+    SILENCE_THRESHOLD = 0.8 
+    last_end_time = 0.0
+
     if hasattr(transcription, 'segments'):
         for segment in transcription.segments:
-            # Los segmentos en Groq pueden venir como diccionarios o como objetos
             start_time = segment.get("start") if isinstance(segment, dict) else segment.start
             end_time = segment.get("end") if isinstance(segment, dict) else segment.end
             text = segment.get("text") if isinstance(segment, dict) else segment.text
             
+            # Detectar si hubo un silencio largo antes de esta frase
+            gap = start_time - last_end_time
+            if gap >= SILENCE_THRESHOLD:
+                silences.append({
+                    "type": "silence_cut",
+                    "start": round(last_end_time, 2),
+                    "end": round(start_time, 2),
+                    "duration": round(gap, 2)
+                })
+
+            # Guardar la frase hablada
             timeline_segments.append({
-                "start": start_time,
-                "end": end_time,
+                "type": "spoken_clip",
+                "start": round(start_time, 2),
+                "end": round(end_time, 2),
                 "text": text.strip()
             })
+            
+            last_end_time = end_time
 
     return {
         "status": "success", 
-        "message": "Audio transcrito con Groq gratuitamente",
-        "transcription": timeline_segments
+        "message": "Análisis completo listo para el editor",
+        "timeline": {
+            "spoken_segments": timeline_segments,
+            "cuts_to_make": silences
+        }
     }
