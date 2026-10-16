@@ -5,12 +5,29 @@ import re
 import shutil
 from groq import Groq
 from dotenv import load_dotenv
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 # Inicializamos el cliente de Groq
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 app = FastAPI(title="AI Video Editor API")
+# Permitir conexiones de la página web
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>Falta el archivo index.html</h1>"
 
 os.makedirs("temp_videos", exist_ok=True)
 os.makedirs("temp_audio", exist_ok=True)
