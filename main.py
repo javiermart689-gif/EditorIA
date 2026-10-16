@@ -7,12 +7,22 @@ from groq import Groq
 from dotenv import load_dotenv
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
+from fastapi.responses import FileResponse
 
 load_dotenv()
 # Inicializamos el cliente de Groq
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 app = FastAPI(title="AI Video Editor API")
+class Clip(BaseModel):
+    start: float
+    end: float
+
+class ExportRequest(BaseModel):
+    filename: str
+    clips: List[Clip]
 # Permitir conexiones de la página web
 app.add_middleware(
     CORSMiddleware,
