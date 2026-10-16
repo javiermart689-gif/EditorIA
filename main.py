@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 import ffmpeg
 import os
+import re
 import shutil
 from groq import Groq
 from dotenv import load_dotenv
@@ -51,13 +52,16 @@ async def process_video(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en IA de Groq: {str(e)}")
 
-   # 4. Formatear la línea de tiempo y detectar silencios
+# 4. Formatear la línea de tiempo, detectar silencios y muletillas
     timeline_segments = []
     silences = []
     
-    # Umbral: ¿Cuántos segundos de silencio consideramos aburridos para cortar? (ej. 0.8 segundos)
     SILENCE_THRESHOLD = 0.8 
     last_end_time = 0.0
+
+    # Lista de muletillas comunes en español
+    filler_words = [r"\beh\b", r"\beste\b", r"\bmmm+\b", r"\bah\b", r"\bpues\b"]
+    filler_pattern = re.compile("|".join(filler_words), re.IGNORECASE)
 
     if hasattr(transcription, 'segments'):
         for segment in transcription.segments:
@@ -65,7 +69,7 @@ async def process_video(file: UploadFile = File(...)):
             end_time = segment.get("end") if isinstance(segment, dict) else segment.end
             text = segment.get("text") if isinstance(segment, dict) else segment.text
             
-            # Detectar si hubo un silencio largo antes de esta frase
+            # 1. Detectar silencios
             gap = start_time - last_end_time
             if gap >= SILENCE_THRESHOLD:
                 silences.append({
@@ -75,19 +79,23 @@ async def process_video(file: UploadFile = File(...)):
                     "duration": round(gap, 2)
                 })
 
-            # Guardar la frase hablada
+            # 2. Detectar muletillas en el texto
+            has_filler = bool(filler_pattern.search(text))
+            
+            # 3. Guardar el clip (marcando si tiene muletillas)
             timeline_segments.append({
                 "type": "spoken_clip",
                 "start": round(start_time, 2),
                 "end": round(end_time, 2),
-                "text": text.strip()
+                "text": text.strip(),
+                "flag_filler": has_filler # Será true si detecta un "eh" o "mmm"
             })
             
             last_end_time = end_time
 
     return {
         "status": "success", 
-        "message": "Análisis completo listo para el editor",
+        "message": "Análisis completo con detección de silencios y muletillas",
         "timeline": {
             "spoken_segments": timeline_segments,
             "cuts_to_make": silences
