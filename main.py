@@ -1,28 +1,22 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-import ffmpeg
 import os
 import re
 import shutil
+import ffmpeg
 from groq import Groq
 from dotenv import load_dotenv
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
-from fastapi.responses import FileResponse
 
 load_dotenv()
+
 # Inicializamos el cliente de Groq
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 app = FastAPI(title="AI Video Editor API")
-class Clip(BaseModel):
-    start: float
-    end: float
 
-class ExportRequest(BaseModel):
-    filename: str
-    clips: List[Clip]
 # Permitir conexiones de la página web
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +25,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+os.makedirs("temp_videos", exist_ok=True)
+os.makedirs("temp_audio", exist_ok=True)
+
+# Clases para la exportación
+class Clip(BaseModel):
+    start: float
+    end: float
+
+class ExportRequest(BaseModel):
+    filename: str
+    clips: List[Clip]
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
     try:
@@ -38,9 +44,6 @@ async def serve_frontend():
             return f.read()
     except FileNotFoundError:
         return "<h1>Falta el archivo index.html</h1>"
-
-os.makedirs("temp_videos", exist_ok=True)
-os.makedirs("temp_audio", exist_ok=True)
 
 @app.post("/upload-and-extract/")
 async def process_video(file: UploadFile = File(...)):
@@ -54,7 +57,7 @@ async def process_video(file: UploadFile = File(...)):
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-   # 2. Extraer audio con FFmpeg
+    # 2. Extraer audio con FFmpeg
     try:
         (
             ffmpeg
@@ -64,7 +67,6 @@ async def process_video(file: UploadFile = File(...)):
             .run(capture_stdout=True, capture_stderr=True)
         )
     except ffmpeg.Error as e:
-        # Aquí capturamos el error interno de FFmpeg
         error_detail = e.stderr.decode('utf-8') if e.stderr else "Error desconocido"
         raise HTTPException(status_code=500, detail=f"FFmpeg falló por: {error_detail}")
 
@@ -79,7 +81,7 @@ async def process_video(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en IA de Groq: {str(e)}")
 
-# 4. Formatear la línea de tiempo, detectar silencios y muletillas
+    # 4. Formatear la línea de tiempo, detectar silencios y muletillas
     timeline_segments = []
     silences = []
     
@@ -96,7 +98,7 @@ async def process_video(file: UploadFile = File(...)):
             end_time = segment.get("end") if isinstance(segment, dict) else segment.end
             text = segment.get("text") if isinstance(segment, dict) else segment.text
             
-            # 1. Detectar silencios
+            # Detectar silencios
             gap = start_time - last_end_time
             if gap >= SILENCE_THRESHOLD:
                 silences.append({
@@ -106,16 +108,16 @@ async def process_video(file: UploadFile = File(...)):
                     "duration": round(gap, 2)
                 })
 
-            # 2. Detectar muletillas en el texto
+            # Detectar muletillas en el texto
             has_filler = bool(filler_pattern.search(text))
             
-            # 3. Guardar el clip (marcando si tiene muletillas)
+            # Guardar el clip
             timeline_segments.append({
                 "type": "spoken_clip",
                 "start": round(start_time, 2),
                 "end": round(end_time, 2),
                 "text": text.strip(),
-                "flag_filler": has_filler # Será true si detecta un "eh" o "mmm"
+                "flag_filler": has_filler
             })
             
             last_end_time = end_time
@@ -128,7 +130,8 @@ async def process_video(file: UploadFile = File(...)):
             "cuts_to_make": silences
         }
     }
-    @app.post("/export/")
+
+@app.post("/export/")
 async def export_video(request: ExportRequest):
     input_path = f"temp_videos/{request.filename}"
     output_path = f"temp_videos/final_{request.filename}"
