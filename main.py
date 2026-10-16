@@ -26,17 +26,19 @@ async def process_video(file: UploadFile = File(...)):
     with open(video_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 2. Extraer audio con FFmpeg
+   # 2. Extraer audio con FFmpeg
     try:
         (
             ffmpeg
             .input(video_path)
             .output(audio_path, acodec='pcm_s16le', ac=1, ar='16k')
             .overwrite_output()
-            .run(quiet=True)
+            .run(capture_stdout=True, capture_stderr=True)
         )
-    except ffmpeg.Error:
-        raise HTTPException(status_code=500, detail="Error extrayendo el audio con FFmpeg")
+    except ffmpeg.Error as e:
+        # Aquí capturamos el error interno de FFmpeg
+        error_detail = e.stderr.decode('utf-8') if e.stderr else "Error desconocido"
+        raise HTTPException(status_code=500, detail=f"FFmpeg falló por: {error_detail}")
 
     # 3. Transcribir con el modelo Whisper alojado en Groq
     try:
