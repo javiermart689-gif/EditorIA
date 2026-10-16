@@ -128,3 +128,38 @@ async def process_video(file: UploadFile = File(...)):
             "cuts_to_make": silences
         }
     }
+    @app.post("/export/")
+async def export_video(request: ExportRequest):
+    input_path = f"temp_videos/{request.filename}"
+    output_path = f"temp_videos/final_{request.filename}"
+
+    if not os.path.exists(input_path):
+        raise HTTPException(status_code=404, detail="El video original ya no está en el servidor.")
+
+    try:
+        input_video = ffmpeg.input(input_path)
+        streams = []
+        
+        # Recortar cada fragmento verde que el usuario decidió conservar
+        for clip in request.clips:
+            v = input_video.video.trim(start=clip.start, end=clip.end).setpts('PTS-STARTPTS')
+            a = input_video.audio.filter('atrim', start=clip.start, end=clip.end).filter('asetpts', 'PTS-STARTPTS')
+            streams.extend([v, a])
+        
+        # Unir todos los pedazos
+        joined = ffmpeg.concat(*streams, v=1, a=1).node
+        
+        # Procesar y guardar el video final
+        (
+            ffmpeg
+            .output(joined[0], joined[1], output_path)
+            .overwrite_output()
+            .run(quiet=True)
+        )
+        
+        # Devolver el archivo de video al navegador para descargarlo
+        return FileResponse(output_path, media_type="video/mp4", filename=f"Editado_{request.filename}")
+        
+    except ffmpeg.Error as e:
+        error_detail = e.stderr.decode('utf-8') if e.stderr else "Error desconocido"
+        raise HTTPException(status_code=500, detail=f"Error cortando el video: {error_detail}")
