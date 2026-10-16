@@ -9,6 +9,8 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
+import uuid
+from fastapi import BackgroundTasks
 
 load_dotenv()
 
@@ -27,6 +29,8 @@ app.add_middleware(
 
 os.makedirs("temp_videos", exist_ok=True)
 os.makedirs("temp_audio", exist_ok=True)
+# Base de datos temporal en memoria
+jobs = {}
 
 # Clases para la exportación
 class Clip(BaseModel):
